@@ -1,31 +1,53 @@
-# app.py 파일 생성
-app_code = """
 import streamlit as st
 import requests
 import datetime
 
+# ✅ Open-Meteo의 Geocoding API 사용
 def get_coordinates(city_name):
-    url = "https://nominatim.openstreetmap.org/search"
-    params = {"q": city_name, "format": "json", "limit": 1}
-    headers = {"User-Agent": "StreamlitApp"}
-    res = requests.get(url, params=params, headers=headers).json()
-    if not res:
+    url = "https://geocoding-api.open-meteo.com/v1/search"
+    params = {"name": city_name, "count": 1, "language": "ko", "format": "json"}
+    try:
+        res = requests.get(url, params=params, timeout=10)
+        data = res.json()
+        if "results" not in data or not data["results"]:
+            return None, None
+        lat = data["results"][0]["latitude"]
+        lon = data["results"][0]["longitude"]
+        return lat, lon
+    except Exception as e:
+        print("Error:", e)
         return None, None
-    return float(res[0]["lat"]), float(res[0]["lon"])
 
+# ✅ 날씨 + 대기질 불러오기
 def get_weather_air(lat, lon):
-    weather_url = "https://api.open-meteo.com/v1/forecast"
-    air_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
-    params_weather = {"latitude": lat, "longitude": lon, "current": ["temperature_2m", "relative_humidity_2m", "wind_speed_10m"]}
-    params_air = {"latitude": lat, "longitude": lon, "current": ["pm2_5", "pm10", "us_aqi"]}
-    weather_data = requests.get(weather_url, params=params_weather).json()
-    air_data = requests.get(air_url, params=params_air).json()
-    temp = weather_data.get("current", {}).get("temperature_2m")
-    humidity = weather_data.get("current", {}).get("relative_humidity_2m")
-    wind = weather_data.get("current", {}).get("wind_speed_10m")
-    aqi = air_data.get("current", {}).get("us_aqi")
-    return temp, humidity, wind, aqi
+    try:
+        weather_url = "https://api.open-meteo.com/v1/forecast"
+        air_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
+        params_weather = {
+            "latitude": lat,
+            "longitude": lon,
+            "current": ["temperature_2m", "relative_humidity_2m", "wind_speed_10m"]
+        }
+        params_air = {
+            "latitude": lat,
+            "longitude": lon,
+            "current": ["pm2_5", "pm10", "us_aqi"]
+        }
+
+        weather_data = requests.get(weather_url, params=params_weather, timeout=10).json()
+        air_data = requests.get(air_url, params=params_air, timeout=10).json()
+
+        temp = weather_data.get("current", {}).get("temperature_2m")
+        humidity = weather_data.get("current", {}).get("relative_humidity_2m")
+        wind = weather_data.get("current", {}).get("wind_speed_10m")
+        aqi = air_data.get("current", {}).get("us_aqi")
+        return temp, humidity, wind, aqi
+    except Exception as e:
+        print("Error:", e)
+        return None, None, None, None
+
+# ✅ 활동 추천 로직
 def recommend_activity(temp, humidity, wind, aqi):
     if aqi is None or temp is None:
         return "데이터를 불러올 수 없습니다."
@@ -42,6 +64,7 @@ def recommend_activity(temp, humidity, wind, aqi):
     else:
         return "✅ 야외활동하기 좋은 날이에요! 조깅, 산책, 자전거 추천 🚴"
 
+# ✅ Streamlit UI
 st.set_page_config(page_title="야외활동 추천", page_icon="🌤️")
 st.title("🌍 공기질 & 날씨 기반 야외활동 추천 앱")
 
@@ -64,9 +87,3 @@ if st.button("확인"):
             st.markdown("### 🏖️ 추천 활동")
             st.info(recommend_activity(temp, humidity, wind, aqi))
             st.caption(f"업데이트: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
-"""
-
-with open("app.py", "w") as f:
-    f.write(app_code)
-
-print("✅ app.py 파일이 생성되었습니다!")
