@@ -1,89 +1,109 @@
 import streamlit as st
 import requests
-import datetime
+import urllib.parse
+from datetime import datetime
 
-# ✅ Open-Meteo의 Geocoding API 사용
+# -------------------------------
+# 1️⃣ 도시 좌표 자동 탐색 (한글 포함)
+# -------------------------------
 def get_coordinates(city_name):
-    url = "https://geocoding-api.open-meteo.com/v1/search"
-    params = {"name": city_name, "count": 1, "language": "ko", "format": "json"}
+    """
+    전 세계 모든 도시명(한글 포함)을 지원하는 좌표 검색
+    OpenStreetMap Nominatim API 사용 (무료)
+    """
     try:
-        res = requests.get(url, params=params, timeout=10)
+        encoded_city = urllib.parse.quote(city_name)
+        url = f"https://nominatim.openstreetmap.org/search?q={encoded_city}&format=json&limit=1"
+        headers = {"User-Agent": "WeatherActivityApp/1.0"}  # 중요: User-Agent 필수
+        res = requests.get(url, headers=headers, timeout=10)
         data = res.json()
-        if "results" not in data or not data["results"]:
+
+        if not data:
             return None, None
-        lat = data["results"][0]["latitude"]
-        lon = data["results"][0]["longitude"]
+
+        lat = float(data[0]["lat"])
+        lon = float(data[0]["lon"])
         return lat, lon
+
     except Exception as e:
-        print("Error:", e)
+        st.error(f"위치 정보를 가져오는 중 오류 발생: {e}")
         return None, None
 
-# ✅ 날씨 + 대기질 불러오기
-def get_weather_air(lat, lon):
+
+# -------------------------------
+# 2️⃣ 날씨 및 공기질 데이터 가져오기
+# -------------------------------
+def get_weather(lat, lon):
     try:
-        weather_url = "https://api.open-meteo.com/v1/forecast"
-        air_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
-
-        params_weather = {
-            "latitude": lat,
-            "longitude": lon,
-            "current": ["temperature_2m", "relative_humidity_2m", "wind_speed_10m"]
-        }
-        params_air = {
-            "latitude": lat,
-            "longitude": lon,
-            "current": ["pm2_5", "pm10", "us_aqi"]
-        }
-
-        weather_data = requests.get(weather_url, params=params_weather, timeout=10).json()
-        air_data = requests.get(air_url, params=params_air, timeout=10).json()
-
-        temp = weather_data.get("current", {}).get("temperature_2m")
-        humidity = weather_data.get("current", {}).get("relative_humidity_2m")
-        wind = weather_data.get("current", {}).get("wind_speed_10m")
-        aqi = air_data.get("current", {}).get("us_aqi")
-        return temp, humidity, wind, aqi
+        url = (
+            f"https://api.open-meteo.com/v1/forecast?"
+            f"latitude={lat}&longitude={lon}"
+            f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,"
+            f"precipitation,weathercode,pm10,pm2_5"
+            f"&timezone=auto"
+        )
+        res = requests.get(url, timeout=10)
+        data = res.json()
+        return data.get("current", {})
     except Exception as e:
-        print("Error:", e)
-        return None, None, None, None
+        st.error(f"날씨 정보를 불러오는 중 오류 발생: {e}")
+        return None
 
-# ✅ 활동 추천 로직
-def recommend_activity(temp, humidity, wind, aqi):
-    if aqi is None or temp is None:
+
+# -------------------------------
+# 3️⃣ 야외활동 추천 로직
+# -------------------------------
+def recommend_activity(weather):
+    if not weather:
         return "데이터를 불러올 수 없습니다."
-    if aqi > 100:
-        return "❌ 공기질이 나빠요! 실내활동을 추천합니다."
-    elif temp > 32:
-        return "🥵 너무 더워요! 이른 아침에만 가벼운 산책을 추천합니다."
-    elif temp < 5:
-        return "🥶 너무 추워요! 따뜻하게 입고 짧은 산책만 하세요."
-    elif humidity > 80:
-        return "💦 습도가 높아요. 실내 운동이 좋아요."
-    elif wind > 8:
-        return "🌬️ 바람이 강하네요. 자전거보단 산책이 좋아요."
+
+    temp = weather.get("temperature_2m")
+    humidity = weather.get("relative_humidity_2m")
+    precipitation = weather.get("precipitation")
+    pm10 = weather.get("pm10", 20)
+    pm25 = weather.get("pm2_5", 10)
+
+    if precipitation and precipitation > 0:
+        return "비가 오니 실내 활동을 추천해요 ☔️"
+    elif temp is not None and (temp < 0 or temp > 32):
+        return "기온이 극단적이에요 🥵❄️ 실내에서 지내는 게 좋아요."
+    elif pm10 > 80 or pm25 > 35:
+        return "미세먼지가 많아요 😷 마스크 착용 또는 실내 활동 권장!"
+    elif humidity and humidity > 85:
+        return "습도가 높아요 💧 야외활동은 조금 불쾌할 수 있어요."
     else:
-        return "✅ 야외활동하기 좋은 날이에요! 조깅, 산책, 자전거 추천 🚴"
+        return "야외활동하기 딱 좋은 날씨예요 ☀️ 산책이나 운동 어때요?"
 
-# ✅ Streamlit UI
-st.set_page_config(page_title="야외활동 추천", page_icon="🌤️")
-st.title("🌍 공기질 & 날씨 기반 야외활동 추천 앱")
 
-city = st.text_input("도시 이름을 입력하세요 (한글/영문 모두 가능):", "서울")
+# -------------------------------
+# 4️⃣ Streamlit 인터페이스
+# -------------------------------
+st.set_page_config(page_title="야외활동 추천 웹앱 🌤️", layout="centered")
 
-if st.button("확인"):
+st.title("🌤️ 공기질·날씨 기반 야외활동 추천 웹앱")
+st.write("전 세계 도시 이름(한글/영문)을 입력하면 날씨와 활동 추천을 보여드려요!")
+
+city = st.text_input("도시 이름을 입력하세요 (예: 서울, Tokyo, Paris, New York):")
+
+if city:
     lat, lon = get_coordinates(city)
-    if not lat:
-        st.error("❗ 도시를 찾을 수 없습니다. 다시 입력해주세요.")
-    else:
-        temp, humidity, wind, aqi = get_weather_air(lat, lon)
-        if temp is None:
-            st.error("데이터를 불러올 수 없습니다.")
+
+    if lat and lon:
+        st.success(f"📍 {city}의 위치: ({lat:.2f}, {lon:.2f})")
+
+        weather = get_weather(lat, lon)
+        if weather:
+            st.subheader("🌡️ 현재 날씨 정보")
+            st.write(f"온도: {weather.get('temperature_2m', 'N/A')} °C")
+            st.write(f"체감 온도: {weather.get('apparent_temperature', 'N/A')} °C")
+            st.write(f"습도: {weather.get('relative_humidity_2m', 'N/A')}%")
+            st.write(f"강수량: {weather.get('precipitation', 'N/A')} mm")
+            st.write(f"미세먼지(PM10): {weather.get('pm10', 'N/A')} µg/m³")
+            st.write(f"초미세먼지(PM2.5): {weather.get('pm2_5', 'N/A')} µg/m³")
+
+            st.subheader("🎯 활동 추천")
+            st.info(recommend_activity(weather))
         else:
-            st.success(f"📍 {city}의 현재 상황")
-            st.write(f"🌡️ 온도: {temp}°C")
-            st.write(f"💧 습도: {humidity}%")
-            st.write(f"🌬️ 풍속: {wind} m/s")
-            st.write(f"🌫️ 공기질 (AQI): {aqi}")
-            st.markdown("### 🏖️ 추천 활동")
-            st.info(recommend_activity(temp, humidity, wind, aqi))
-            st.caption(f"업데이트: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
+            st.error("날씨 데이터를 가져오지 못했습니다.")
+    else:
+        st.error("도시를 찾을 수 없습니다. 다른 이름으로 시도해보세요.")
