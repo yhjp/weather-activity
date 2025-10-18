@@ -113,7 +113,7 @@ def recommend_activity(weather):
 st.set_page_config(page_title="야외활동 추천 웹앱 🌤️", layout="centered")
 
 st.title("🌤️ 공기질·날씨 기반 야외활동 추천 웹앱")
-st.write("한글/영문 도시 이름을 입력하면 날씨와 활동 추천을 보여드려요!")
+st.write("영문 도시 이름을 입력하면 날씨와 활동 추천을 보여드려요!")
 
 city = st.text_input("도시 이름을 입력하세요 (예: 서울, Tokyo, Paris, New York):")
 
