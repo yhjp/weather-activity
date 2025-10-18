@@ -1,20 +1,49 @@
 import streamlit as st
 import requests
-import urllib.parse
-from datetime import datetime
 
 # -------------------------------
-# 1️⃣ 도시 좌표 자동 탐색 (한글 포함)
+# 1️⃣ 도시명 → 좌표 변환
 # -------------------------------
 def get_coordinates(city_name):
-    """
-    Open-Meteo의 무료 Geocoding API 사용 (한글 지원)
-    """
+    # 기본적인 한영 매핑
+    city_map = {
+        "서울": "Seoul",
+        "부산": "Busan",
+        "대구": "Daegu",
+        "인천": "Incheon",
+        "광주": "Gwangju",
+        "대전": "Daejeon",
+        "울산": "Ulsan",
+        "제주": "Jeju",
+        "하노이": "Hanoi",
+        "도쿄": "Tokyo",
+        "파리": "Paris",
+        "뉴욕": "New York",
+        "런던": "London",
+        "베이징": "Beijing",
+        "상하이": "Shanghai",
+        "로스앤젤레스": "Los Angeles",
+    }
+
+    # 한글일 경우 영어로 변환
+    if city_name in city_map:
+        city_query = city_map[city_name]
+    else:
+        city_query = city_name
+
+    url = "https://geocoding-api.open-meteo.com/v1/search"
+    params = {"name": city_query, "count": 1, "language": "en", "format": "json"}
+
     try:
-        url = "https://geocoding-api.open-meteo.com/v1/search"
-        params = {"name": city_name, "count": 1, "language": "ko", "format": "json"}
         res = requests.get(url, params=params, timeout=10)
         data = res.json()
+
+        # 결과 없으면 영어 이름으로 재시도
+        if "results" not in data or not data["results"]:
+            if city_query != city_name:
+                params["name"] = city_name
+                res = requests.get(url, params=params, timeout=10)
+                data = res.json()
 
         if "results" not in data or not data["results"]:
             return None, None
@@ -22,6 +51,7 @@ def get_coordinates(city_name):
         lat = data["results"][0]["latitude"]
         lon = data["results"][0]["longitude"]
         return lat, lon
+
     except Exception as e:
         st.error(f"위치 정보를 가져오는 중 오류 발생: {e}")
         return None, None
@@ -33,15 +63,20 @@ def get_coordinates(city_name):
 def get_weather(lat, lon):
     try:
         url = (
+            f"https://air-quality-api.open-meteo.com/v1/air-quality?"
+            f"latitude={lat}&longitude={lon}&current=pm10,pm2_5"
+        )
+        air = requests.get(url, timeout=10).json().get("current", {})
+
+        url2 = (
             f"https://api.open-meteo.com/v1/forecast?"
             f"latitude={lat}&longitude={lon}"
-            f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,"
-            f"precipitation,weathercode,pm10,pm2_5"
+            f"&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation"
             f"&timezone=auto"
         )
-        res = requests.get(url, timeout=10)
-        data = res.json()
-        return data.get("current", {})
+        weather = requests.get(url2, timeout=10).json().get("current", {})
+
+        return {**weather, **air}
     except Exception as e:
         st.error(f"날씨 정보를 불러오는 중 오류 발생: {e}")
         return None
@@ -73,12 +108,12 @@ def recommend_activity(weather):
 
 
 # -------------------------------
-# 4️⃣ Streamlit 인터페이스
+# 4️⃣ Streamlit UI
 # -------------------------------
 st.set_page_config(page_title="야외활동 추천 웹앱 🌤️", layout="centered")
 
 st.title("🌤️ 공기질·날씨 기반 야외활동 추천 웹앱")
-st.write("전 세계 도시 이름(한글/영문)을 입력하면 날씨와 활동 추천을 보여드려요!")
+st.write("한글/영문 도시 이름을 입력하면 날씨와 활동 추천을 보여드려요!")
 
 city = st.text_input("도시 이름을 입력하세요 (예: 서울, Tokyo, Paris, New York):")
 
