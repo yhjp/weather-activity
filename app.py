@@ -8,23 +8,20 @@ from datetime import datetime
 # -------------------------------
 def get_coordinates(city_name):
     """
-    전 세계 모든 도시명(한글 포함)을 지원하는 좌표 검색
-    OpenStreetMap Nominatim API 사용 (무료)
+    Open-Meteo의 무료 Geocoding API 사용 (한글 지원)
     """
     try:
-        encoded_city = urllib.parse.quote(city_name)
-        url = f"https://nominatim.openstreetmap.org/search?q={encoded_city}&format=json&limit=1"
-        headers = {"User-Agent": "WeatherActivityApp/1.0"}  # 중요: User-Agent 필수
-        res = requests.get(url, headers=headers, timeout=10)
+        url = "https://geocoding-api.open-meteo.com/v1/search"
+        params = {"name": city_name, "count": 1, "language": "ko", "format": "json"}
+        res = requests.get(url, params=params, timeout=10)
         data = res.json()
 
-        if not data:
+        if "results" not in data or not data["results"]:
             return None, None
 
-        lat = float(data[0]["lat"])
-        lon = float(data[0]["lon"])
+        lat = data["results"][0]["latitude"]
+        lon = data["results"][0]["longitude"]
         return lat, lon
-
     except Exception as e:
         st.error(f"위치 정보를 가져오는 중 오류 발생: {e}")
         return None, None
